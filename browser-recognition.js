@@ -8,7 +8,7 @@ if (!fs.existsSync(`${__dirname}/browsers.json`))
 
 let browsers = JSON.parse(fs.readFileSync(`${__dirname}/browsers.json`));
 let ip = request => request.headers['x-forwarded-for'] || request.connection.remoteAddress;
-let port = process.env.BR_PORT || 1337;
+let port = process.env.BR_PORT || 8421;
 
 class Sighting {
   constructor(request) {

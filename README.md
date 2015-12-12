@@ -2,7 +2,7 @@
 
 This is a proof-of-concept application which can recognize and track users using only server-side logic, without cookies.
 
-You can see it live here [chrisyou.ng:1337](https://chrisyou.ng:1337)
+You can see it live here [www.chrisyou.ng:8421](http://54.69.84.138:8421/)
 
 What does this do?
 
@@ -14,4 +14,4 @@ What does this do?
 ## Setup
 
 This application has no dependencies but requires Node.js v5.0.0 or newer.
-You can change the default port from 1337 by setting the `$BR_PORT` environmental variable.
+You can change the default port from 8421 by setting the `$BR_PORT` environmental variable.
