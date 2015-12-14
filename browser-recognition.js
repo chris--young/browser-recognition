@@ -54,22 +54,31 @@ function uuid() {
 function listener(request, response) {
   let etag = request.headers['if-none-match'];
 
-  if (request.url !== '/') {
+	console.log('\n\nheaders:', request.headers);
+
+  if (request.url !== '/' && request.url !== '/track') {
     response.statusCode = 404;
     response.end();
-    return
+    return;
   }
-  
-  if (etag) {
-    response.statusCode = 304;
+
+  if (request.url == '/') {
+    response.statusCode == 200;
+    response.write('<!doctype html><html><head></head><body>oh, you again...<iframe src="/track"></iframe></body></html>');
+    response.end();
+    return;
+  }
+
+  if (etag || request.headers['if-modified-since']) {
+    response.writeHead(304, {etag: etag, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
     response.end();
 
     browsers[etag] ? Browser.update(etag, request) : browsers[etag] = new Browser(request);
   } else {
     let id = uuid();
 
-    response.writeHead(200, {etag: id});
-    response.write(`oh, you again...\n\n id: ${id}`);
+    response.writeHead(200, {'date': 'Tue, 15 Nov 2020 12:45:26 GMT', etag: id, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
+    response.write(`id: ${id}`);
     response.end();
 
     browsers[id] = new Browser(request);
@@ -78,4 +87,4 @@ function listener(request, response) {
   fs.writeFileSync(`${__dirname}/browsers.json`, JSON.stringify(browsers));
 }
 
-http.createServer(listener).listen(port);
+http.createServer(listener).listen(port, () => { console.log('listening'); });
