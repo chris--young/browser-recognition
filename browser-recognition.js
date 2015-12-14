@@ -77,7 +77,7 @@ function listener(request, response) {
   } else {
     let id = uuid();
 
-    response.writeHead(200, {'date': 'Tue, 15 Nov 2020 12:45:26 GMT', etag: id, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
+    response.writeHead(200, {etag: id, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
     response.write(`id: ${id}`);
     response.end();
 
