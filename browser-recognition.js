@@ -1,90 +1,115 @@
 'use strict';
 
-let http = require('http'),
+let https = require('https'),
+    http = require('http'),
     fs = require('fs');
 
-if (!fs.existsSync(`${__dirname}/browsers.json`))
-  fs.writeFileSync(`${__dirname}/browsers.json`, JSON.stringify(new Map()));
+const HTTPS_PORT = process.argv[2] || 1337,
+      HTTP_PORT = process.argv[3] || 8421;
+    
+let subdomains = [null],
+    browsers = new Map();
 
-let browsers = JSON.parse(fs.readFileSync(`${__dirname}/browsers.json`));
-let ip = request => request.headers['x-forwarded-for'] || request.connection.remoteAddress;
-let port = process.env.BR_PORT || 8421;
+function id() {
+    let chars = '0123456789abcdefghijklmnopqrstuvwxyz'.split(''),
+        output = '';
 
-class Sighting {
-  constructor(request) {
-    this.at = new Date();
-    this.from = ip(request);
-  }
+    for (let i = 0; i < 8; i++)
+        output += chars[Math.floor(Math.random() * (chars.length - 1))];
+
+    // check for collision
+    return output;
 }
 
-class Browser {
-  constructor(request) {
-    this.browser = request.headers['user-agent'];
-    this.seen = [new Sighting(request)];
-  }
+function parseDomain(request) {
+    let host = request.headers.host,
+        address = request.connection.address().address;
 
-  static update(etag, request) {
-    browsers[etag].seen.push(new Sighting(request));
-  }
+    return ~address.indexOf('127.0.0.1') || address === '::1' ? 'localhost' : host.substring(host.lastIndexOf(':'), host.length);
 }
 
-function uuid() {
-  let id = [];
-  let s = new Date().getTime();
+function parseSubdomain(request) {
+    let subdomain = request.headers.host.replace(`:${request.connection.address().port}`, '').replace(`.${request.domain}`, '');
 
-  for (let i = 0; i < 36; i++) {
-    if (i === 8 || i === 13 || i === 18 || i === 23)
-      id[i] = '-';
-    else if (i === 14)
-      id[14] = '4';
-    else {
-      if (s <= 0x02)
-        s = 33554432 + (Math.random() * 16777216) | 0;
+    return subdomain === request.domain ? null : subdomain;
+}
 
-      let r = s & 0xf;
+function subdomainLocation(index, request, encrypted) {
+    let protocol = encrypted ? 'https' : 'http',
+        port = encrypted ? HTTPS_PORT : HTTP_PORT;
 
-      s = s >> 4;
-      id[i] = ((i === 19) ? (r & 0x3) | 0x8 : r).toString(16)
+    return index ? `${protocol}:\/\/${subdomains[index]}.${request.domain}:${port}/track` : `${protocol}:\/\/${request.domain}:${port}/track`;
+}
+
+function logRequest(request) {
+    console.log('\nNEW REQUEST');
+
+    console.log('request.url ==', request.url);
+    console.log('request.headers ==', request.headers);
+    console.log('request.connection.remoteAddress ==', request.connection.remoteAddress);
+    console.log('request.connection.address() ==', request.connection.address());
+    console.log('request.connection.encrypted ==', request.connection.encrypted);
+
+    console.log('request.domain:', request.domain);
+    console.log('request.subdomain:', request.subdomain);
+}
+
+function route(request, response) {
+    let index = subdomains.indexOf(request.subdomain);
+
+    if (request.method !== 'GET') {
+        response.statusCode = 405;
+    } else if (!~index || (request.url !== '/' && request.url !== '/track')) {
+        response.statusCode = 404;
+    /* } else if (request.connection.encrypted && request.url === '/') {
+        response.statusCode = 404;
+    } else if (!request.connection.encrypted && request.url === '/') {
+        response.writeHead(200, { 'Content-Type': 'text/html' });
+        response.write('<!doctype html><html><body>oh, you again...<iframe src="http://localhost:8421/track" width=1000 height=500></iframe></body></html>'); */
+    } else {
+        logRequest(request);
+        if (request.connection.encrypted) {
+            if (request.subdomain !== null) {
+                response.writeHead(302, { 'Location': subdomainLocation(0, request, true) });
+                console.log('ID FOUND');
+            } else {
+                response.writeHead(200, { 'Content-Type': 'application/json', 'Strict-Transport-Security': 'max-age=31536000' });
+                response.write(JSON.stringify({ id: browsers.get(request.connection.remoteAddress) }));
+                console.log('ID DISPLAYED TO USER');
+            }
+        } else if (index === subdomains.length - 1) {
+            response.writeHead(302, { 'Location': subdomainLocation(index, request, true) });
+            console.log('ID ASSIGNED');
+            subdomains.push(id());
+            browsers.set(request.connection.remoteAddress, request.subdomain);
+        } else if (request.subdomain !== null) {
+            response.writeHead(302, { 'Location': subdomainLocation(++index, request) });
+            console.log('CONTINUING SEARCH FOR ID');
+        } else {
+            response.writeHead(302, { 'Location': subdomainLocation(1, request) });
+            console.log('STARTING SEARCH FOR ID');
+        }
     }
-  }
 
-  return id.join('');
+    response.end();
 }
 
-function listener(request, response) {
-  let etag = request.headers['if-none-match'];
+function listen(request, response) {
+    request.domain = parseDomain(request);
+    request.subdomain = parseSubdomain(request);
 
-	console.log('\n\nheaders:', request.headers);
+    console.log('DOMAIN:', request.domain);
+    console.log('SUBDOMAIN:', request.subdomain);
 
-  if (request.url !== '/' && request.url !== '/track') {
-    response.statusCode = 404;
-    response.end();
-    return;
-  }
-
-  if (request.url == '/') {
-    response.statusCode == 200;
-    response.write('<!doctype html><html><head></head><body>oh, you again...<iframe src="/track"></iframe></body></html>');
-    response.end();
-    return;
-  }
-
-  if (etag || request.headers['if-modified-since']) {
-    response.writeHead(304, {etag: etag, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
-    response.end();
-
-    browsers[etag] ? Browser.update(etag, request) : browsers[etag] = new Browser(request);
-  } else {
-    let id = uuid();
-
-    response.writeHead(200, {etag: id, 'cache-control': 'public, max-age=31536000', 'expires': 'Tue, 15 Nov 2020 12:45:26 GMT', 'last-modified': 'Tue, 15 Nov 1994 12:45:26 GMT'});
-    response.write(`id: ${id}`);
-    response.end();
-
-    browsers[id] = new Browser(request);
-  }
-
-  fs.writeFileSync(`${__dirname}/browsers.json`, JSON.stringify(browsers));
+    route(request, response);
 }
 
-http.createServer(listener).listen(port, () => { console.log('listening'); });
+let options = {
+    key: fs.readFileSync(`${__dirname}/certs/xip.io/xip.io.key`),
+    cert: fs.readFileSync(`${__dirname}/certs/xip.io/xip.io.crt`)
+};
+
+subdomains.push(id());
+
+https.createServer(options, listen).listen(HTTPS_PORT);
+http.createServer(listen).listen(HTTP_PORT);
